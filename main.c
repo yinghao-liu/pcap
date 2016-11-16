@@ -23,26 +23,54 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #define MAXBYTES2CAPTURE	2048
-void process_packet(u_char *arg, const struct pcap_pkthdr *stamp_len, const u_char *packet)
+void print_raw_data(const uint8_t *start,uint16_t size)
 {
-	uint8_t *counter = arg;
 	uint16_t i;
-	printf("packet count :%d\n",++(*counter));
-	printf("captured packet size: %d\n",stamp_len->caplen);
-	printf("tatol    packet size: %d\n",stamp_len->len);
-	printf("display:\n");
-	for (i=0;i<stamp_len->len;i++){
-		printf("%02x ",packet[i]);
-		if(i==0){
-			continue;
-		}
-		if (((i+1)%8 == 0) || (i==stamp_len->len-1)){
+	for (i=0;i<size;i++){
+		printf("%02x ",start[i]);
+		if (((i+1)%8 == 0) || (i==size-1)){
 			printf(" ");	
 		}
-		if (((i+1)%16 == 0) || (i==stamp_len->len-1)){
+		if (((i+1)%16 == 0) || (i==size-1)){
 			printf("\n");	
 		}
 	}
+	
+}
+void process_packet(u_char *arg, const struct pcap_pkthdr *stamp_len, const u_char *packet)
+{
+
+	struct ether_header *ether_sp = NULL;
+	struct ip *ip_sp = NULL;
+	struct tcphdr *tcp_sp = NULL;
+	unsigned char *beyond_tcp = NULL; 
+	uint8_t ether_len = 14;
+	uint8_t ip_len    = 0;
+	uint8_t tcp_len   = 0;
+	uint8_t beyond_tcp_len = 0;
+
+	uint8_t *counter = arg;
+
+	ether_sp   = (struct ether_header *)packet;
+	ip_sp	   = (struct ip *)(ether_sp + 1);
+	ip_len	   = ip_sp->ip_hl * 4;
+	tcp_sp	   = (struct tcphdr *)((uint8_t *)ip_sp + ip_len);
+	tcp_len    = tcp_sp->doff * 4 ;
+	beyond_tcp = (unsigned char *)((uint8_t *)tcp_sp + tcp_len);
+	beyond_tcp_len = stamp_len->len - ether_len - ip_len - tcp_len;
+
+	printf("packet count :%d\n",++(*counter));
+	printf("captured packet size: %d\n",stamp_len->caplen);
+	printf("tatol    packet size: %d\n",stamp_len->len);
+	printf("display ether: \n");
+	print_raw_data((const uint8_t *)ether_sp,ether_len);
+	printf("display ip: \n");
+	print_raw_data((const uint8_t *)ip_sp,ip_len);
+	printf("display tcp: \n");
+	print_raw_data((const uint8_t *)tcp_sp,tcp_len);
+	printf("display beyond_tcp: \n");
+	print_raw_data((const uint8_t *)beyond_tcp,beyond_tcp_len);
+	
 	return;
 }
 int main(void)
@@ -68,7 +96,7 @@ int main(void)
 		printf("pcap_open_live error:%s\n",errbuf);
 		return -1;
 	}
-	//printf("%d\n",pcap_datalink(descr));
+	//printf("%d\n",pcap_datalink(descr));/*display datalink type*/
 	ret = pcap_compile(descr,&program,"! port 22 and ! arp and host 192.168.42.132",1,mask);
 	if (ret != 0){
 		pcap_perror(descr,"pcap_compile");
