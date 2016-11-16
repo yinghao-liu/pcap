@@ -19,6 +19,9 @@
 #include <string.h>
 #include <pcap/pcap.h>
 #include <inttypes.h>
+#include <netinet/ether.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
 #define MAXBYTES2CAPTURE	2048
 void process_packet(u_char *arg, const struct pcap_pkthdr *stamp_len, const u_char *packet)
 {
@@ -66,7 +69,7 @@ int main(void)
 		return -1;
 	}
 	//printf("%d\n",pcap_datalink(descr));
-	ret = pcap_compile(descr,&program,"! port 22 and ! arp and ! host 192.168.30.58 and host 192.168.42.132",1,mask);
+	ret = pcap_compile(descr,&program,"! port 22 and ! arp and host 192.168.42.132",1,mask);
 	if (ret != 0){
 		pcap_perror(descr,"pcap_compile");
 		return -1;
