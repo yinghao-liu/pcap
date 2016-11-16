@@ -23,6 +23,7 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #define MAXBYTES2CAPTURE	2048
+#define IPPORT_HTTPS		443
 void print_raw_data(const uint8_t *start,uint16_t size)
 {
 	uint16_t i;
@@ -41,24 +42,40 @@ void process_packet(u_char *arg, const struct pcap_pkthdr *stamp_len, const u_ch
 {
 
 	struct ether_header *ether_sp = NULL;
-	struct ip *ip_sp = NULL;
+	struct iphdr *ip_sp = NULL;
 	struct tcphdr *tcp_sp = NULL;
 	unsigned char *beyond_tcp = NULL; 
 	uint8_t ether_len = 14;
 	uint8_t ip_len    = 0;
 	uint8_t tcp_len   = 0;
 	uint8_t beyond_tcp_len = 0;
-
+	uint16_t sport;  /* tcp source port*/
+	uint16_t dport;  /* tcp destination port*/
+	
 	uint8_t *counter = arg;
+/****************************** ether and ip layer *************************************/
+	ether_sp = (struct ether_header *)packet;
+	ip_sp	 = (struct iphdr *)(ether_sp + 1);
+	if (ip_sp->protocol != IPPROTO_TCP){  /* only process tcp */
+		return;	
+	}
+	ip_len = ip_sp->ihl * 4;
 
-	ether_sp   = (struct ether_header *)packet;
-	ip_sp	   = (struct ip *)(ether_sp + 1);
-	ip_len	   = ip_sp->ip_hl * 4;
-	tcp_sp	   = (struct tcphdr *)((uint8_t *)ip_sp + ip_len);
+/****************************** tcp layer *************************************/
+	tcp_sp = (struct tcphdr *)((uint8_t *)ip_sp + ip_len);
+	sport = ntohs(tcp_sp->source);
+	dport = ntohs(tcp_sp->dest);
+	printf("%d,%d\n",sport,dport);
+	if (sport != IPPORT_HTTPS && dport != IPPORT_HTTPS){ /* only process https */
+		return;
+	}
 	tcp_len    = tcp_sp->doff * 4 ;
+
+/****************************** beyond_tcp layer *************************************/
 	beyond_tcp = (unsigned char *)((uint8_t *)tcp_sp + tcp_len);
 	beyond_tcp_len = stamp_len->len - ether_len - ip_len - tcp_len;
 
+/****************************** print raw data *************************************/
 	printf("packet count :%d\n",++(*counter));
 	printf("captured packet size: %d\n",stamp_len->caplen);
 	printf("tatol    packet size: %d\n",stamp_len->len);
