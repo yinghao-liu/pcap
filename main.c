@@ -101,19 +101,22 @@ int main(void)
 	bpf_u_int32 mask = 0;
 
 	memset(errbuf,0,PCAP_ERRBUF_SIZE);
-	device = pcap_lookupdev(errbuf);
+	/*device = pcap_lookupdev(errbuf);
 	if(device != NULL) {
 		printf("success: device: %s\n", device);
 	} else {
 		printf("pcap_lookupdev error: %s\n", errbuf);
 		return -1;
-	}
+	}*/
+	device = "lo";
 	descr = pcap_open_live(device,MAXBYTES2CAPTURE,1,512,errbuf);
 	if(descr == NULL){
 		printf("pcap_open_live error:%s\n",errbuf);
 		return -1;
 	}
-	//printf("%d\n",pcap_datalink(descr));/*display datalink type*/
+	printf("%d\n",pcap_datalink(descr));/*display datalink type*/
+	printf("%s\n",pcap_datalink_val_to_name(pcap_datalink(descr)));/*display datalink type*/
+	return 0;
 	ret = pcap_compile(descr,&program,"! port 22 and ! arp and host 192.168.42.132",1,mask);
 	if (ret != 0){
 		pcap_perror(descr,"pcap_compile");
