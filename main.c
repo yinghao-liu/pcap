@@ -21,6 +21,11 @@
 #include <inttypes.h>
 #include <netinet/ether.h>
 #include <netinet/ip.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#define __FAVOR_BSD
 #include <netinet/tcp.h>
 #define MAXBYTES2CAPTURE	2048
 #define IPPORT_HTTPS		443
@@ -38,96 +43,98 @@ void print_raw_data(const uint8_t *start,uint16_t size)
 	}
 	
 }
-void process_packet(u_char *arg, const struct pcap_pkthdr *stamp_len, const u_char *packet)
+pcap_t* open_pcap(const char *source)
 {
+	pcap_t* pcap_fd = NULL;
+	int ret;
+	char errbuf[PCAP_ERRBUF_SIZE]={0};
+	pcap_fd = pcap_create(source, errbuf);
+	if (NULL == pcap_fd){
+		printf("pcap_create failed : %s\n",errbuf);
+		return NULL;
+	}
+	ret = pcap_activate(pcap_fd);
+	if (ret != 0){
+		pcap_perror(pcap_fd, "pcap_activate error: ");	
+		pcap_close(pcap_fd);
+		return NULL;
+	}
+	return pcap_fd;
 
+}
+void mac_to_hex(uint8_t* hex, const char* mac)
+{
+	sscanf(mac, "%x:%x:%x:%x:%x:%x", &hex[0],&hex[1],&hex[2],&hex[3],&hex[4],&hex[5]);
+}
+
+int send_packet(void)
+{
+	uint16_t buff_len;
+	uint8_t  buff[100]={0};
 	struct ether_header *ether_sp = NULL;
 	struct iphdr *ip_sp = NULL;
 	struct tcphdr *tcp_sp = NULL;
-	unsigned char *beyond_tcp = NULL; 
-	uint8_t ether_len = 14;
-	uint8_t ip_len    = 0;
-	uint8_t tcp_len   = 0;
-	uint8_t beyond_tcp_len = 0;
-	uint16_t sport;  /* tcp source port*/
-	uint16_t dport;  /* tcp destination port*/
-	
-	uint8_t *counter = arg;
-/****************************** ether and ip layer *************************************/
-	ether_sp = (struct ether_header *)packet;
-	ip_sp	 = (struct iphdr *)(ether_sp + 1);
-	if (ip_sp->protocol != IPPROTO_TCP){  /* only process tcp */
-		return;	
-	}
-	ip_len = ip_sp->ihl * 4;
+	uint8_t *vlan_sp = NULL; 
+	uint8_t *beyond_tcp = NULL; 
+	char tmp[]={2,4,5,0xb4,4,2,8,0x0a,1,0x49,0x77,0x9a,0,0,0,0,1,3,3,7};	
+	pcap_t *eth_out=NULL;
+/****************************** ether layer *************************************/
+	ether_sp = (struct ether_header*)buff;
+	mac_to_hex(ether_sp->ether_dhost, "00:50:56:eb:b0:73");
+	mac_to_hex(ether_sp->ether_shost, "00:0c:29:bc:0c:f5");
+	//ether_sp->ether_type = htons(ETHERTYPE_IP);
+	ether_sp->ether_type = htons(ETHERTYPE_VLAN);
+
+/****************************** vlan layer *************************************/
+	vlan_sp = (uint8_t*)(ether_sp + 1);
+	vlan_sp[0]=0;
+	vlan_sp[1]=2;
+	vlan_sp[2]=8;
+	vlan_sp[3]=0;
+ 
+/****************************** ip layer *************************************/
+	ip_sp = (struct iphdr*)(vlan_sp+4);
+	ip_sp->version = 4;
+	ip_sp->ihl = 5;//length 5*4 =20 byte
+	ip_sp->tos = 0;
+	ip_sp->tot_len = htons(60); //reassign below
+	ip_sp->id = htons(0x1a6c);//maybe wrong
+	ip_sp->ttl= 64;
+	ip_sp->protocol = IPPROTO_TCP;
+	ip_sp->frag_off = htons(0x4000);
+	ip_sp->check = htons(0x383d);
+	ip_sp->saddr = inet_addr("192.168.79.135");
+	ip_sp->daddr = inet_addr("223.6.248.220");
 
 /****************************** tcp layer *************************************/
-	tcp_sp = (struct tcphdr *)((uint8_t *)ip_sp + ip_len);
-	sport = ntohs(tcp_sp->source);
-	dport = ntohs(tcp_sp->dest);
-	printf("%d,%d\n",sport,dport);
-	if (sport != IPPORT_HTTPS && dport != IPPORT_HTTPS){ /* only process https */
-		return;
+	tcp_sp = (struct tcphdr*)(ip_sp + 1);
+	tcp_sp->th_sport = htons(50604);
+	tcp_sp->th_dport = htons(80);
+	tcp_sp->th_seq = htonl(0xba3f6df6);
+	tcp_sp->th_ack = htonl(0);
+	tcp_sp->th_off = 0x0a;
+	tcp_sp->th_flags = TH_SYN;
+	tcp_sp->th_win = htons(29200);
+	tcp_sp->th_sum = htons(0xe841);
+
+
+/****************************** tcp2 layer *************************************/
+	beyond_tcp = (uint8_t*)(tcp_sp+1);
+	memcpy(beyond_tcp, tmp, sizeof (tmp));
+	buff_len = (char*)beyond_tcp - (char*)ether_sp + sizeof (tmp);
+	print_raw_data(buff,buff_len);
+	eth_out = open_pcap("ens33");
+	if (eth_out == NULL){
+		return -1;
 	}
-	tcp_len    = tcp_sp->doff * 4 ;
 
-/****************************** beyond_tcp layer *************************************/
-	beyond_tcp = (unsigned char *)((uint8_t *)tcp_sp + tcp_len);
-	beyond_tcp_len = stamp_len->len - ether_len - ip_len - tcp_len;
-
-/****************************** print raw data *************************************/
-	printf("packet count :%d\n",++(*counter));
-	printf("captured packet size: %d\n",stamp_len->caplen);
-	printf("tatol    packet size: %d\n",stamp_len->len);
-	printf("display ether: \n");
-	print_raw_data((const uint8_t *)ether_sp,ether_len);
-	printf("display ip: \n");
-	print_raw_data((const uint8_t *)ip_sp,ip_len);
-	printf("display tcp: \n");
-	print_raw_data((const uint8_t *)tcp_sp,tcp_len);
-	printf("display beyond_tcp: \n");
-	print_raw_data((const uint8_t *)beyond_tcp,beyond_tcp_len);
-	
-	return;
+	pcap_inject(eth_out, buff, buff_len);
+	return 0;
 }
+
+
 int main(void)
 {
-	int  ret;
-	char errbuf[PCAP_ERRBUF_SIZE];
-	char *device  = NULL;
-	uint8_t count  = 0;
-	pcap_t *descr = NULL;
-	struct bpf_program program;
-	bpf_u_int32 mask = 0;
-
-	memset(errbuf,0,PCAP_ERRBUF_SIZE);
-	/*device = pcap_lookupdev(errbuf);
-	if(device != NULL) {
-		printf("success: device: %s\n", device);
-	} else {
-		printf("pcap_lookupdev error: %s\n", errbuf);
-		return -1;
-	}*/
-	device = "lo";
-	descr = pcap_open_live(device,MAXBYTES2CAPTURE,1,512,errbuf);
-	if(descr == NULL){
-		printf("pcap_open_live error:%s\n",errbuf);
-		return -1;
-	}
-	printf("%d\n",pcap_datalink(descr));/*display datalink type*/
-	printf("%s\n",pcap_datalink_val_to_name(pcap_datalink(descr)));/*display datalink type*/
-	return 0;
-	ret = pcap_compile(descr,&program,"! port 22 and ! arp and host 192.168.42.132",1,mask);
-	if (ret != 0){
-		pcap_perror(descr,"pcap_compile");
-		return -1;
-	}
-	ret = pcap_setfilter(descr,&program);
-	if (ret != 0){
-		pcap_perror(descr,"pcap_setfilter");
-		return -1;
-	}
-	pcap_loop(descr,-1,process_packet,&count);
-
+	send_packet();
 	return 0;
 }
