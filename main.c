@@ -64,7 +64,7 @@ pcap_t* open_pcap(const char *source)
 }
 void mac_to_hex(uint8_t* hex, const char* mac)
 {
-	sscanf(mac, "%x:%x:%x:%x:%x:%x", &hex[0],&hex[1],&hex[2],&hex[3],&hex[4],&hex[5]);
+	sscanf(mac, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &hex[0],&hex[1],&hex[2],&hex[3],&hex[4],&hex[5]);
 }
 /********************************ip_checksum*******************************************/
 void ip_checksum(struct iphdr *ip_sp)
@@ -118,12 +118,12 @@ void tcp_checksum(struct iphdr* ip_sp, struct tcphdr* tcp_sp)
 		sum += tmp[tick];	
 		//printf("%04x  sumis: %04x\n", tmp[tick],sum);
 	}
-	//printf("qufan~ :%04x\n",~0xcbb7);
 	//printf("checksum  :%04x\n",sum);
 	while (sum > 0xffff){
 		sum = (sum & 0xffff) +(sum >> 16);
 	}
 	sum = ~sum & 0xffff;
+	//printf("checksum2  :%04x\n",sum);
 	tcp_sp->th_sum = sum;
 }
 
@@ -138,14 +138,14 @@ int send_packet(void)
 	uint8_t *vlan_sp = NULL; 
 	uint8_t *beyond_tcp = NULL; 
 	//char tmp[]={2,4,5,0xb4,4,2,8,0x0a,0x75,0x39,0xe9,0x92,0,0,0,0,1,3,3,7};	
-	char tmp[]={2,4,5,0xb4,1,3,3,2,1,1,4,2};	
+	char tmp[]={2,4,0x26,0xe7,4,2,8,0x0a,0x11,0xe8,0x93,0x99,0,0,0,0,1,3,3,7};	
 	pcap_t *eth_out=NULL;
 /****************************** ether layer *************************************/
 	ether_sp = (struct ether_header*)buff;
-	//mac_to_hex(ether_sp->ether_dhost, "00:50:56:eb:b0:73");
-	//mac_to_hex(ether_sp->ether_shost, "00:0c:29:bc:0c:f5");
-	mac_to_hex(ether_sp->ether_dhost, "00:0f:e2:4c:7c:c6");
-	mac_to_hex(ether_sp->ether_shost, "94:de:80:1c:05:ab");
+	mac_to_hex(ether_sp->ether_shost, "00:0c:29:bc:0c:f5");
+	mac_to_hex(ether_sp->ether_dhost, "00:50:56:f6:46:f9");
+	//mac_to_hex(ether_sp->ether_dhost, "00:0f:e2:4c:7c:c6");
+	//mac_to_hex(ether_sp->ether_shost, "94:de:80:1c:05:ab");
 	ether_sp->ether_type = htons(ETHERTYPE_IP);
 	//ether_sp->ether_type = htons(ETHERTYPE_VLAN);
 
@@ -163,22 +163,22 @@ int send_packet(void)
 	ip_sp->ihl = 5;//length 5*4 =20 byte
 	ip_sp->tos = 0;
 	ip_sp->tot_len = 0; //reassign below
-	ip_sp->id = htons(0x7323);//maybe wrong
-	ip_sp->ttl= 128;
+	ip_sp->id = htons(0x5d35);
+	ip_sp->ttl= 64;
 	ip_sp->protocol = IPPROTO_TCP;
 	ip_sp->frag_off = htons(0x4000);
-	ip_sp->saddr = inet_addr("192.168.30.169");
-	ip_sp->daddr = inet_addr("101.37.97.51");
+	ip_sp->saddr = inet_addr("192.168.183.128");
+	ip_sp->daddr = inet_addr("101.37.225.58");
 
 /****************************** tcp layer *************************************/
 	tcp_sp = (struct tcphdr*)(ip_sp + 1);
-	tcp_sp->th_sport = htons(61557);
+	tcp_sp->th_sport = htons(38514);
 	tcp_sp->th_dport = htons(80);
-	tcp_sp->th_seq = htonl(0x6544bb96);
+	tcp_sp->th_seq = htonl(0x2e51ceac);
 	tcp_sp->th_ack = htonl(0);
-	tcp_sp->th_off = 8;
+	tcp_sp->th_off = 0xa;
 	tcp_sp->th_flags = TH_SYN;
-	tcp_sp->th_win = htons(65535);
+	tcp_sp->th_win = htons(19918);
 
 
 /****************************** tcp2 layer *************************************/
